@@ -299,14 +299,16 @@ export default function TemplePrototype() {
     }
   }, [stage, stateInfo.theme]);
 
+  const isSecuredRef = useRef(false);
+
   /* ─── STAGE 2: SEAL LOGIC (1.8s HOLD) ───────────────────────────── */
 
   const startSealHold = useCallback(() => {
-    if (stage !== 'seal' || isSecured) return;
+    if (stage !== 'seal' || isSecuredRef.current) return;
     isSealHolding.current = true;
     setIsHolding(true);
     templeAudio.startSealHum();
-  }, [stage, isSecured]);
+  }, [stage]);
 
   const stopSealHold = useCallback(() => {
     if (stage !== 'seal') return;
@@ -315,34 +317,36 @@ export default function TemplePrototype() {
     templeAudio.stopSealHum();
   }, [stage]);
 
+  // Keep isSecuredRef in sync with isSecured state
   useEffect(() => {
-    if (stage !== 'seal') return;
+    isSecuredRef.current = isSecured;
+  }, [isSecured]);
+
+  // Hold progress animation loop (fills to 100% on hold, decays on release)
+  useEffect(() => {
+    if (stage !== 'seal' || isSecured) return;
 
     let lastTime = performance.now();
     const tick = (now: number) => {
       const delta = (now - lastTime) / 1000;
       lastTime = now;
 
-      if (isSealHolding.current && !isSecured) {
+      if (isSealHolding.current && !isSecuredRef.current) {
         setHoldProgress((prev) => {
           // 0% -> 100% in exactly 1.8 seconds
           const next = Math.min(100, prev + (100 / 1.8) * delta);
 
-          if (next >= 100 && prev < 100) {
-            setIsSecured(true);
-            setIsHolding(false);
+          if (next >= 100 && prev < 100 && !isSecuredRef.current) {
+            isSecuredRef.current = true;
             isSealHolding.current = false;
+            setIsHolding(false);
+            setIsSecured(true);
             templeAudio.stopSealHum();
             templeAudio.playLockClick();
-            // Exactly 800ms "bask in success" delay before transitioning to calibrate
-            sealTransitionTimeoutRef.current = setTimeout(() => {
-              setStage('calibrate');
-              setIsSecured(false);
-            }, 1600);
           }
           return next;
         });
-      } else if (!isSecured) {
+      } else if (!isSecuredRef.current) {
         setHoldProgress((prev) => {
           if (prev >= 100) return 100;
           return Math.max(0, prev - (100 / 0.8) * delta);
@@ -355,7 +359,24 @@ export default function TemplePrototype() {
     sealRafRef.current = requestAnimationFrame(tick);
     return () => {
       if (sealRafRef.current) cancelAnimationFrame(sealRafRef.current);
-      if (sealTransitionTimeoutRef.current) clearTimeout(sealTransitionTimeoutRef.current);
+    };
+  }, [stage, isSecured]);
+
+  // Dedicated transition effect: once secured, hold for 1.6s then transition to calibrate
+  useEffect(() => {
+    if (stage !== 'seal' || !isSecured) return;
+
+    sealTransitionTimeoutRef.current = setTimeout(() => {
+      setStage('calibrate');
+      setIsSecured(false);
+      setHoldProgress(0);
+      isSecuredRef.current = false;
+    }, 1600);
+
+    return () => {
+      if (sealTransitionTimeoutRef.current) {
+        clearTimeout(sealTransitionTimeoutRef.current);
+      }
     };
   }, [stage, isSecured]);
 
@@ -394,6 +415,8 @@ export default function TemplePrototype() {
 
   const replay = useCallback(() => {
     if (sealTransitionTimeoutRef.current) clearTimeout(sealTransitionTimeoutRef.current);
+    isSecuredRef.current = false;
+    isSealHolding.current = false;
     templeAudio.stopSealHum();
     templeAudio.stopScanningLoop();
     setStage('discover');
