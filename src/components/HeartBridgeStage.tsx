@@ -21,6 +21,11 @@ export default function HeartBridgeStage({ finish, onComplete }: HeartBridgeStag
   const heartbeatsPlayedRef = useRef<{ [key: string]: boolean }>({});
   const chimePlayedRef = useRef(false);
   const completeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const onCompleteRef = useRef(onComplete);
+
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
 
   useEffect(() => {
     startTimeRef.current = performance.now();
@@ -49,7 +54,7 @@ export default function HeartBridgeStage({ finish, onComplete }: HeartBridgeStag
           chimePlayedRef.current = true;
           templeAudio.playSyncChime();
           completeTimeoutRef.current = setTimeout(() => {
-            onComplete();
+            onCompleteRef.current?.();
           }, 2600);
         }
         return;
@@ -65,7 +70,7 @@ export default function HeartBridgeStage({ finish, onComplete }: HeartBridgeStag
       if (completeTimeoutRef.current) clearTimeout(completeTimeoutRef.current);
       templeAudio.stopScanningLoop();
     };
-  }, [onComplete]);
+  }, []);
 
   const progressRatio = Math.min(1, elapsed / SYNC_DURATION);
   const pulseFound = elapsed >= 1.2;
